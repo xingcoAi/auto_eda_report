@@ -16,7 +16,7 @@ class automation_eda:
         data_path="test_data.csv",
         data_dict=None,
         fillna_value=-9999,
-        train_test_split=False,
+        data_split=False,
         select_method="toad",
         xgb_params={
             "max_depth": 4,
@@ -58,7 +58,7 @@ class automation_eda:
         :param data_path: 数据文件路径（需要根据实际情况修改）或者df变量, 默认 'test_data.csv'
         :param data_dict：人为处理后的数据集分类，默认为None，不为None时字典必须包含训练集，例如{"train":train_data}
         :param fillna_value: 缺失值填充值, 默认 -9999
-        :param train_test_split: 是否进行训练集和测试集划分, 默认 False
+        :param data_split: 是否进行训练集和测试集划分, 默认 False
         :param select_method: 特征筛选方法, 默认 'toad'，可选'custom'（iv值和相关性筛选）
         :param xgb_params：XGBoost模型参数，默认xgb_params = {
                                                     "max_depth": 4,
@@ -99,7 +99,7 @@ class automation_eda:
         self.data_path = data_path
         self.data_dict = data_dict
         self.fillna_value = fillna_value
-        self.train_test_split = train_test_split
+        self.data_split = data_split
         self.select_method = select_method
         self.report_file_name = report_file_name
         self.report_title = report_title
@@ -190,14 +190,17 @@ class automation_eda:
             9: "九",
         }
 
-        def fig_to_html(buff, fig_title):
+        def fig_to_html(buff, fig_title=None):
             import base64
 
             plot_data = buff.getvalue()
             imb = base64.b64encode(plot_data)
             ims = imb.decode()
             imd = "data:image/png;base64," + ims
-            html_img = "<p>" + str(fig_title) + "</p>"
+            if fig_title is not None:
+                html_img = "<p>" + str(fig_title) + "</p>"
+            else:
+                html_img = ""
             html_img = html_img + """<img src="%s">""" % imd + "<br>"
             return html_img
 
@@ -269,7 +272,7 @@ class automation_eda:
         # data.fillna(self.fillna_value, inplace=True)
         target_rate = data[self.target_col].value_counts()[1] / len(data)
 
-        if self.data_mode == 0 and self.train_test_split:
+        if self.data_mode == 0 and self.data_split:
             # 训练集测试集划分
             train, test = train_test_split(
                 data,
@@ -286,7 +289,7 @@ class automation_eda:
             #     random_state=42,
             # )
             print(f"训练集维度为：{train.shape}， 测试集维度为：{test.shape}。")
-        elif self.data_mode == 0 and not self.train_test_split:
+        elif self.data_mode == 0 and not self.data_split:
             data_dict = {"train": data, "test": data}
         else:
             data_dict = {
@@ -405,7 +408,7 @@ class automation_eda:
                     bi_html = TT_Compare_Select.bivar_html(
                         "连续型特征等频分箱效果分析",
                         {"train": data_bins["train"]}
-                        if (self.data_mode == 0 and not self.train_test_split)
+                        if (self.data_mode == 0 and not self.data_split)
                         else data_bins,
                         target_rate,
                         bivar_list,
@@ -426,7 +429,7 @@ class automation_eda:
         # 判断不进行数据集划分的情况
         if self.show_params["fea_imp"][0]:  # 显示特征重要性模块
             sub_params = self.show_params["fea_imp"][1]
-            if self.data_mode == 0 and self.train_test_split:
+            if self.data_mode == 0 and self.data_split:
                 train_test_info = f"<br><p>在去除非数值型特征基础上，对数据集按测试集占<b>{self.test_size}</b>的比例进行划分，\
                             训练集维度{data_dict['train'].shape}，测试集维度{data_dict['test'].shape}。<p><br>"
             else:
@@ -444,7 +447,7 @@ class automation_eda:
                     )["iv"]
                 )
                 train_iv["iv"] = train_iv["iv"].map(lambda x: "%.3f" % x)
-                if self.train_test_split:
+                if self.data_split:
                     iv_title = "训练集特征IV值"
                 else:
                     iv_title = "数据集特征IV值"
@@ -471,7 +474,7 @@ class automation_eda:
                 data_dict["train"].drop(columns=[self.target_col]).columns,
                 train_one_value,
             ).tolist()
-            if self.train_test_split:
+            if self.data_split:
                 corr_title = "训练集特征相关性热力图"
             else:
                 corr_title = "数据集特征相关性热力图"
@@ -580,7 +583,7 @@ class automation_eda:
             subset=["特征"], keep="first", ignore_index=True
         ).set_index("特征")
         del_cols_df.index.name = None
-        select_title = "训练集iv值" if self.train_test_split else "数据集iv值"
+        select_title = "训练集iv值" if self.data_split else "数据集iv值"
         select_cols_info = f"<br><br>对{select_title}大于等于{self.iv_threshold}，相关性小于等于{self.corr_threshold}进行入模特征选择。共筛选出{select.shape[1]-1}个入模特征。<br>"
         if str(self.iv_upper).isdigit():
             select_cols_info = f"<br><br>对{select_title}大于等于{self.iv_threshold}且小于{self.iv_upper}，相关性小于等于{self.corr_threshold}进行入模特征选择。共筛选出{select.shape[1]-1}个入模特征。<br>"
@@ -656,7 +659,7 @@ class automation_eda:
                     )
                     xgb_params = optuna_result["model_params"]
                     xgb_params.update({"eval_metric": "auc"})
-                # if not self.train_test_split:
+                # if not self.data_split:
                 xgb_params.pop("early_stopping_rounds", None)
                 xgb = XGBClassifier(**xgb_params)
                 print("\n")
@@ -672,9 +675,8 @@ class automation_eda:
                     data_dict["train"][x_cols].fillna(self.fillna_value),
                     data_dict["train"].target,
                 )
-                if (self.data_mode == 0 and self.train_test_split) or (
-                    self.data_mode == 1
-                ):
+                not_train_data = pd.DataFrame()
+                if (self.data_mode == 0 and self.data_split) or (self.data_mode == 1):
                     for idx_name, idx_data in data_dict.items():
                         if idx_name != "train":
                             data_name.append(idx_name)
@@ -689,8 +691,19 @@ class automation_eda:
                                 ],
                                 axis=0,
                             )
+                            not_train_data = pd.concat(
+                                [
+                                    not_train_data,
+                                    idx_data[x_cols].fillna(self.fillna_value),
+                                ],
+                                axis=0,
+                            )
                     model_metrics.reset_index(drop=True, inplace=True)
                     model_metrics["数据集"] = data_name
+                else:
+                    not_train_data = data_dict["train"][x_cols].fillna(
+                        self.fillna_value
+                    )
                 self.model_metrics = model_metrics
                 self.model_params = pd.DataFrame([xgb_params]).T
                 self.model_params.columns = ["参数值"]
@@ -753,9 +766,7 @@ class automation_eda:
                 )
                 # 3.1 测试集100等分
                 module_six_subtitle = 4
-                if (self.data_mode == 0 and self.train_test_split) or (
-                    self.data_mode == 1
-                ):
+                if (self.data_mode == 0 and self.data_split) or (self.data_mode == 1):
                     for idx_name, idx_bins in model_bins.items():
                         if idx_name != "train":
                             xgb_html = (
@@ -779,7 +790,7 @@ class automation_eda:
                 fi_imp = xgb.get_booster().get_score(importance_type="gain")
                 if len(fi_imp) <= 20:
                     buff = BytesIO()
-                    fig, ax = plt.subplots(figsize=(20, 15))
+                    fig, ax = plt.subplots(figsize=(8, 10))
                     fi_viz = FeatureImportances(xgb, ax=ax, relative=True)
                     fi_viz.fit(
                         data_dict["train"][x_cols].fillna(self.fillna_value),
@@ -803,6 +814,38 @@ class automation_eda:
                         + "<br>"
                         + fi_df.to_html()
                     )
+
+                # 加入SHAP的全局可解释性和特征贡献柱状图
+                try:
+                    import shap
+
+                    global_buff = BytesIO()
+                    bar_buff = BytesIO()
+                    shap_values = shap.TreeExplainer(xgb)(not_train_data)
+                    fig, ax = plt.subplots()
+                    shap.summary_plot(shap_values, show=False)
+                    plt.savefig(global_buff, bbox_inches="tight", dpi=100)
+                    plt.close()
+                    fig, ax = plt.subplots()
+                    shap.plots.bar(shap_values, show=False)
+                    plt.savefig(bar_buff, bbox_inches="tight", dpi=100)
+                    plt.close()
+                    global_html = fig_to_html(global_buff)
+                    bar_html = fig_to_html(bar_buff)
+                    xgb_html = (
+                        xgb_html
+                        + "<br>"
+                        + "<b>SHAP 全局可解释性</b>"
+                        + "<br>"
+                        + global_html
+                        + "<br><br>"
+                        + "<b>SHAP 特征重要性</b><br>"
+                        + bar_html
+                        + "<br>"
+                    )
+
+                except ImportError:
+                    pass
                 module_six_subtitle += 1
                 # 5.roc
                 xgb_html = (
@@ -816,7 +859,7 @@ class automation_eda:
                                     x_cols + [self.target_col]
                                 ].fillna(self.fillna_value),
                             }
-                            if (self.data_mode == 0 and not self.train_test_split)
+                            if (self.data_mode == 0 and not self.data_split)
                             else {
                                 key: data_dict[key][x_cols + [self.target_col]].fillna(
                                     self.fillna_value
@@ -839,7 +882,7 @@ class automation_eda:
                     + fig_to_html(
                         Eval_Module.ks_plot(
                             {"train": model_bins["train"]}
-                            if (self.data_mode == 0 and not self.train_test_split)
+                            if (self.data_mode == 0 and not self.data_split)
                             else model_bins,
                             fig_size=(12, 9),
                             is_pdf=True,
@@ -857,7 +900,7 @@ class automation_eda:
                         Eval_Module.lift_plot(
                             target_rate,
                             {"train": model_bins["train"]}
-                            if (self.data_mode == 0 and not self.train_test_split)
+                            if (self.data_mode == 0 and not self.data_split)
                             else model_bins,
                             fig_size=(12, 9),
                             is_pdf=True,
@@ -870,9 +913,7 @@ class automation_eda:
                 lift_table = model_bins["train"][["分数段", "提升度"]].rename(
                     columns={"提升度": "train-lift"}
                 )
-                if (
-                    self.data_mode == 0 and self.train_test_split
-                ) or self.data_mode == 1:
+                if (self.data_mode == 0 and self.data_split) or self.data_mode == 1:
                     for idx_name, idx_bins in model_bins.items():
                         if idx_name != "train":
                             lift_table = lift_table.merge(
